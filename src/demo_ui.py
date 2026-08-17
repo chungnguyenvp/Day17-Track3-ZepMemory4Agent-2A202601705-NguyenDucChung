@@ -35,6 +35,7 @@ import streamlit as st
 from src.config import settings
 from src.llm import gemini_available, generate_reply
 from src.memory_student import StudentMemory
+from src.router import route_query
 from src.short_term import ShortTermMemory
 from src.utils import GOLDEN_PATH, load_dataset, load_json
 from src.zep_common import get_zep_client
@@ -107,8 +108,52 @@ def retrieve_for_case(
       * Keep user_id and thread_id from the loaded case.
       * Finish with memory.assemble_context(layers).
     """
-    _ = (memory, case, extra_messages, settings, ShortTermMemory)
-    raise NotImplementedError("BONUS TODO: run student retrieval for the loaded case")
+    dataset = load_dataset()
+    user_id = case.get("user_id", "")
+    thread_id = case.get("thread_id", "")
+    query = case.get("query", "")
+
+    # --- short-term: same rule as the benchmark, plus the live chat turns ---
+    stm = ShortTermMemory(strategy="sliding", max_recent_messages=6, pressure_tokens=450)
+    messages = list(case.get("fixture_messages") or [])
+    seeded_threads: set[str] = set()
+    for user in dataset["users"]:
+        seeded_threads.update(s["thread_id"] for s in user.get("sessions", []))
+        if user["user_id"] == user_id and not messages:
+            for session in user.get("sessions", []):
+                if session["thread_id"] == thread_id:
+                    messages = list(session.get("messages", []))
+    for msg in messages + list(extra_messages or []):
+        stm.add(msg["role"], msg["content"])
+
+    # --- which durable layers to hit ---
+    expected = case.get("expected_layer", "")
+    if expected == "mixed":
+        wanted = set(case.get("retrieve_layers") or ["long_term", "semantic"])
+    elif expected:
+        wanted = {expected}
+    else:
+        wanted = set()
+    # Free-form chat turns carry no expected_layer, so let the router decide too.
+    wanted |= set(route_query(query))
+
+    # retrieve_long_term calls prime_eval_thread, which deletes and recreates the
+    # thread. Never point that at a seeded session thread or the demo would wipe
+    # the ingested conversations; use a UI-scoped thread instead.
+    lt_thread = thread_id if thread_id not in seeded_threads else f"ui-{case.get('id', 'demo')}"
+
+    layers = {"short_term": stm.render(), "long_term": "", "episodic": "", "semantic": ""}
+    if "long_term" in wanted and user_id and lt_thread:
+        layers["long_term"] = memory.retrieve_long_term(
+            user_id=user_id, thread_id=lt_thread, query=query
+        )
+    if "episodic" in wanted and user_id:
+        layers["episodic"] = memory.retrieve_episodic(user_id, query)
+    if "semantic" in wanted:
+        layers["semantic"] = memory.retrieve_semantic(settings.semantic_graph_id, query)
+
+    merged_context, budget = memory.assemble_context(layers)
+    return {"merged_context": merged_context, "layers": layers, "budget": budget}
 
 
 def main() -> None:
