@@ -8,7 +8,7 @@ Long-term: quyết định E02, E03, E08, E09 (20đ) và một nửa E07. Layer 
 
 ## 2. Trade-off Zep vs Redis + Qdrant
 
-Redis + Qdrant cho quyền kiểm soát: TTL, schema, dữ liệu tại chỗ, độ trễ gần 0; đổi lại phải tự trích xuất fact và xử lý xung đột — Redis không tự hiểu "TypeScript đã thay Python". Zep làm sẵn: fact graph có `valid_at`/`invalid_at` và Context Block theo relevance. Giá: 1414.9ms mỗi truy vấn long-term (local 0.1ms), ingestion bất đồng bộ, dữ liệu ở bên thứ ba — lý do lab bắt buộc consent gate và drill xóa.
+Redis + Qdrant cho quyền kiểm soát: TTL, schema, dữ liệu tại chỗ, độ trễ gần 0; đổi lại phải tự trích xuất fact và xử lý xung đột — Redis không tự hiểu "TypeScript đã thay Python". Zep làm sẵn: fact graph có `valid_at`/`invalid_at` và Context Block theo relevance. Giá: 1634.7ms mỗi truy vấn long-term (local 0.1ms), ingestion bất đồng bộ, dữ liệu ở bên thứ ba — lý do lab bắt buộc consent gate và drill xóa.
 
 ## 3. Guardrail chống memory poisoning
 
@@ -16,9 +16,9 @@ Redis + Qdrant cho quyền kiểm soát: TTL, schema, dữ liệu tại chỗ, �
 
 ## 4. Phân tích benchmark
 
-- **Layer yếu nhất:** không layer nào fail; điểm yếu là độ trễ — long_term 1414.9ms vs episodic 311.1ms, semantic 359.9ms, do `prime_eval_thread` ghi trước khi đọc.
-- **Tốn token nhất:** E03 (1499), E02 (1492), E08 (1489) — đều long_term (Context Block + 20 edges).
-- **E07:** cần long_term + semantic; bắt buộc có `Python` và `Idempotency-Key`. Budget cắt long_term 1501 → 324 token, semantic giữ 148.
+- **Layer yếu nhất:** không layer nào fail; điểm yếu là độ trễ — long_term 1634.7ms vs episodic 284.8ms, semantic 574.5ms, do `prime_eval_thread` ghi trước khi đọc.
+- **Tốn token nhất:** E08 (1458), E03 (1452), E02 (1428) — đều long_term (Context Block + 20 edges).
+- **E07:** cần long_term + semantic; bắt buộc có `Python` và `Idempotency-Key`. Budget cắt long_term 1471 → 324 token, semantic giữ 148.
 - **Token reduction:** 14.2% vs 81.8% của no-memory. Baseline tiết kiệm vì không lấy gì, trả giá bằng 2/11 — chỉ có nghĩa khi đọc kèm hit rate.
 
 ## 5. E08 và E10
